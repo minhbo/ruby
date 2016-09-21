@@ -1,0 +1,143 @@
+#!/usr/bin/ruby
+
+require 'fileutils'
+
+$players = Hash.new
+$data_file = "/home/mnguyen/data"
+
+#Define log variables for highstate log
+$log_dir = "/home/mnguyen/salt"
+$log_file = "highstate.log"
+
+#Define command variables for use with the command_group method
+$ping = "test.ping"
+$reboot = "system.reboot"
+$del_minion = "cmd.run 'del c:\\salt\\conf\\minion_id'"
+$highstate = "state.highstate | tee -a #{$log_dir}/#{$log_file}"
+$get_fqdn = "grains.item fqdn"
+
+unless
+  File.exists? $data_file
+  puts "\n#{$data_file} does not exist. Check the config and try again.\n\n"
+  exit
+end
+
+File.foreach("data") do |lines|
+  name, domain = lines.chomp.split(/,/)
+  $players[name.to_s] = domain
+end
+
+Signal.trap("INT") {
+  exit
+}
+
+def main_menu
+  puts "What do you want to do?
+
+   1: ping hostname
+   2: set fqdn
+   3: system.reboot
+   4: check fqdn
+   5: ping hostname *
+   6: delete minion_id
+   7: ping fqdn
+   8: check salt-keys
+   9: delete salt-keys
+  10: run highstate
+  "
+  case gets.strip
+    when "1"
+      command_group("host", $ping)
+    when "2"
+      set_fqdn
+    when "3"
+      command_group("host", $reboot)
+    when "4"
+      command_list("host", $get_fqdn)
+    when "5"
+      command_list("host", $ping)
+    when "6"
+      command_group("host", $del_minion)
+    when "7"
+      command_group("fqdn", $ping)
+    when "8"
+     salt_key("get")
+    when "9"
+      salt_key("del")
+    when "10"
+      check_log
+      command_group("fqdn", $highstate)
+    end
+end
+
+def clear()
+  system "clear"
+end
+
+def space()
+  print "\n\n\n"
+end
+
+def names_list(type)
+  $players.each_with_index do |(name, domain), index|
+    if index == 0; print "'" end
+    if type == "host"; print "#{name}" end
+    if type == "fqdn"; print "#{name}.#{domain}.adshel.net" end
+    unless index == $players.size - 1; print ", " end
+    if index == $players.size - 1; print "'" end
+  end
+end
+
+def command_group(target, command)
+  clear
+  space
+  print "salt -L "
+  if target == "host"; names_list("host") end
+  if target == "fqdn"; names_list("fqdn")end
+  print " #{command}"
+  space
+  main_menu
+end
+
+def command_list(target, command)
+  clear
+  space
+  $players.each do |name, domain|
+    puts "salt '#{name}*' #{command}"
+  end
+  space
+  main_menu
+end
+
+def set_fqdn()
+  clear
+  space
+  $players.each do |name, domain|
+    puts "salt #{name} cmd.script salt://scripts/setFQDN2.ps1 shell=powershell args=\"#{domain}\""
+  end
+  space
+  main_menu
+end
+
+def salt_key(action)
+  clear
+  space
+  $players.each do |name, domain|
+    if action == "get"; puts "salt-key | grep #{name}" end
+    if action == "del"; puts "salt-key -d #{name} -y" end
+  end
+  space
+  main_menu
+end
+
+def check_log()
+  unless
+    File.exists? "#{$log_dir}/#{$log_file}"
+    unless Dir.exist? "#{$log_dir}"; FileUtils::mkdir_p $log_dir end
+    File.new "#{$log_dir}/#{$log_file}", "w"
+  end
+end
+
+clear
+space
+main_menu
